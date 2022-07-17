@@ -1,0 +1,591 @@
+#ADVERSE SCENARIO
+
+library(plotly)
+
+####1) We define the components of the portfolio
+#we define the portfolio notional and the loans amount
+Tot_portfolio=20000
+NotionalxName=100
+
+#we divide the portfolio in 5 different tranches, supposing a CLO 2.0 with the following division
+Tranche_equity= 0.11*Tot_portfolio
+Tranche_mezzanine1= 0.04*Tot_portfolio
+Tranche_mezzanine2= 0.05*Tot_portfolio
+Tranche_Senior= 0.07*Tot_portfolio
+Tranche_Super=0.73*Tot_portfolio
+Initial_tranches=rbind(Tranche_equity,Tranche_mezzanine1,Tranche_mezzanine2,Tranche_Senior,Tranche_Super)
+Tranches=rbind(Tranche_equity,Tranche_mezzanine1,Tranche_mezzanine2,Tranche_Senior,Tranche_Super)
+Tranches
+
+#we define the risk free rate
+Risk_free=0.012 
+
+#we calculate the interest paid by the underlying loans as LIBOR + 250 bps
+loans_int=(Risk_free+0.025)
+Interest_Underlying=Tot_portfolio*loans_int
+Interest_Underlying
+
+#we calculate the interest paid by each CLO tranche as risk free + tranche spread
+Val_Interests=matrix(0,5,1)
+Val_Interests[2,]=(Risk_free+0.05)*Tranche_mezzanine1
+Val_Interests[3,]=(Risk_free+0.03)*Tranche_mezzanine2
+Val_Interests[4,]=(Risk_free+0.015)*Tranche_Senior
+Val_Interests[5,]=(Risk_free+0.012)*Tranche_Super
+Val_Interests[1,]= Interest_Underlying - sum(Val_Interests[c(2:5),])
+colnames(Val_Interests)="Value"
+rownames(Val_Interests)=c("Equity", "Mezzanine1", "Mezzanine2", "Junior Senior","Super Senior" )
+Val_Interests
+
+Interest_Underlying
+sum(Val_Interests[c(2:5),])
+
+Interest=Val_Interests/Tranches
+Interest
+
+#we create a matrix with the information previously coded
+Tranche_name=matrix(0,5,4)
+colnames(Tranche_name)=c("Attachment Point %", "Detachment Point %", "CLO Tranche Value", "Interest x Year")
+rownames(Tranche_name)=c("Equity", "Junior mezzanine", "Senior mezzanine", "Junior Senior", "Superior Senior")
+Tranche_name[,1]= c(0,11,15,20,27)
+Tranche_name[,2]=c(11,15,20,27,100)
+Tranche_name[,3]=Tranches
+Tranche_name[,4]=Interest
+Tranche_name
+
+
+###2)We create the portfolio simulation
+#we define the risk free and the linear correlation rho
+set.seed(123)
+
+#we simulate 10000 observation form a Standard Normal and define 2 different market scenarios
+rand = rnorm(10000)
+M1=quantile(rand, probs = 0.5)
+M2=quantile(rand, probs = 0.1) 
+
+
+#defining parameters
+rho = 0.2 #defining correlation
+Hazard_rate = 0.05 #Hazard rate for BB
+RR=0.65  #RR of BB
+LGD=1-RR
+A <- matrix(200*7, nrow= 200, ncol=7)
+colnames(A) <- c("M","Zi","Correlated xi","Pi","1-Pi", "Years to default", "Default in Year")
+
+A[,1] = M2
+
+A[,2] = rnorm(200) 
+A[,3] = sqrt(rho)*M2+sqrt(1-rho)*A[,2] #applying the one factor model
+A[,4] = pnorm(A[,3])
+A[,5] = 1 - A[,4]
+A[,6] = log(A[,5])/log(1-Hazard_rate) #obtaining the defaults as function fo the hazard rate
+
+#printing the default years
+A[,7] = sapply(A[,6], function (x) (if(x > 5){
+  print("No Default")
+} else {print(ceiling(x))}))
+
+A
+
+#we create a matrix for the number of defaults
+Default_year=matrix(0,5,1)
+Default_year[1,]=Default_year1= length(which(A[,7]==1))
+Default_year[2,]=Default_year2= length(which(A[,7]==2))
+Default_year[3,]=Default_year3= length(which(A[,7]==3))
+Default_year[4,]=Default_year4= length(which(A[,7]==4))
+Default_year[5,]=Default_year5= length(which(A[,7]==5))
+
+#we create a matrix for the losses amount
+LossesxYear=matrix(0,5,1)
+Losses1=LossesxYear[1,] = Default_year1*NotionalxName*LGD
+Losses2=LossesxYear[2,] = Default_year2*NotionalxName*LGD
+Losses3=LossesxYear[3,] = Default_year3*NotionalxName*LGD
+Losses4=LossesxYear[4,] = Default_year4*NotionalxName*LGD
+Losses5=LossesxYear[5,] = Default_year5*NotionalxName*LGD
+Losses=LossesxYear
+sum(Losses)
+DefLos= matrix(0,5,2)
+colnames(DefLos)=c("N° of Default", "Losses")
+rownames(DefLos)=c("Year 1", "Year 2", "Year 3", "Year 4","Year 5")
+DefLos[,1]=Default_year
+DefLos[,2]=Losses
+DefLos
+
+#we define the value of the underlying notional during the years
+Underlying_notional=matrix(0,6,1)
+Underlying_notional[1,]=Tot_portfolio
+Underlying_notional[2,]=Tot_portfolio-Losses1
+Underlying_notional[3,]=Underlying_notional[2,]-Losses2
+Underlying_notional[4,]=Underlying_notional[3,]-Losses3
+Underlying_notional[5,]=Underlying_notional[4,]-Losses4
+Underlying_notional[6,]=Underlying_notional[5,]-Losses5
+rownames(Underlying_notional)=c("Year 0", "Year 1", "Year 2", "Year 3", "Year 4","Year 5")
+colnames(Underlying_notional)="Notional"
+Underlying_notional
+
+#we create the OC test
+OC_test=matrix(0,6,4)
+OC_test[,1]=Underlying_notional/sum(Tranches[c(2:5),])
+OC_test[,2]=Underlying_notional/sum(Tranches[c(3:5),])
+OC_test[,3]=Underlying_notional/sum(Tranches[c(4:5),])
+OC_test[,4]=Underlying_notional/Tranches[5,]
+colnames(OC_test)=c("Junior Mezzanine", "Senior Mezzanine", "Junior Senior","Super Senior" )
+rownames(OC_test)=c("Year 0","Year 1", "Year 2", "Year 3", "Year 4","Year 5")
+
+#we define the interest underlying yearly
+Interest_Underlying
+Int_under=matrix(0,6,1)
+Int_under[1,]=Interest_Underlying
+Int_under[2,]=Interest_Underlying*(1- (Default_year[1,]/200))
+Int_under[3,]=Interest_Underlying*(1- (sum(Default_year[c(1:2),])/200))
+Int_under[4,]=Interest_Underlying*(1- (sum(Default_year[c(1:3),])/200))
+Int_under[5,]=Interest_Underlying*(1- (sum(Default_year[c(1:4),])/200))
+Int_under[6,]=Interest_Underlying*(1- (sum(Default_year[c(1:5),])/200))
+rownames(Int_under)=c("Year 0","Year 1", "Year 2", "Year 3", "Year 4", "Year 5")
+colnames(Int_under)="Interest x Year"
+Int_under
+
+Val_Interests
+
+#we define the IC test
+IC_test=matrix(0,6,4)
+IC_test[,1]=Int_under/sum(Val_Interests[c(2:5),])
+IC_test[,2]=Int_under/sum(Val_Interests[c(3:5),])
+IC_test[,3]=Int_under/sum(Val_Interests[c(4:5),])
+IC_test[,4]=Int_under/sum(Val_Interests[5,])
+rownames(IC_test)=c("Year 0","Year 1", "Year 2", "Year 3", "Year 4", "Year 5")
+colnames(IC_test)=c("Junior Mezzanine", "Senior Mezzanine", "Junior Senior","Super Senior" )
+
+
+#we now define the tranche loss and the tranche value for each year
+Tranche_Loss=matrix(0,5,5)
+colnames(Tranche_Loss)=c("Equity", "Junior Mezzanine", "Senior Mezzanine", "Junior Senior","Super Senior" )
+rownames(Tranche_Loss)=c("Year 1", "Year 2", "Year 3", "Year 4","Year 5")
+
+Tranche_value=matrix(0,6,5)
+colnames(Tranche_value)=c("Equity", "Junior Mezzanine", "Senior Mezzanine", "Junior Senior","Super Senior" )
+rownames(Tranche_value)=c("Year 0", "Year 1", "Year 2", "Year 3", "Year 4","Year 5")
+
+#tranche value year 0
+Tranche_value[1,]= c(Tranche_equity,Tranche_mezzanine1,Tranche_mezzanine2,Tranche_Senior,Tranche_Super)
+Tranche_value[1,]
+
+
+#tranches loss year 1
+Tranche_Loss[1,1]= if (Losses1>0 & Losses1>=Tranche_equity){(Tranche_equity)}  else {if(Losses1>0 & Losses1<Tranche_equity){Losses1} else{0}}
+Tranche_Loss[1,2]= if (Losses1>Tranche_equity & Losses1<Tranche_equity+Tranche_mezzanine1 ){-(Tranche_equity-Losses1)}else {if(Losses1>Tranche_mezzanine1+Tranche_equity){Tranche_mezzanine1} else{0}}
+Tranche_Loss[1,3]= if (Losses1>Tranche_equity+Tranche_mezzanine1 & Losses1<Tranche_equity+Tranche_mezzanine1+Tranche_mezzanine2){(-(Tranche_mezzanine1+Tranche_equity-Losses1))}else {if(Losses1>Tranche_mezzanine2+Tranche_mezzanine1+Tranche_equity){Tranche_mezzanine2} else{0}}
+Tranche_Loss[1,4]= if (Losses1>Tranche_equity+Tranche_mezzanine1+Tranche_mezzanine2  & Losses1<Tranche_equity+Tranche_mezzanine1+Tranche_mezzanine2+Tranche_Senior){(Tranche_Senior+Tranche_mezzanine2+Tranche_mezzanine1+Tranche_equity-Losses1)}else{if(Losses1>Tranche_Senior+Tranche_mezzanine2+Tranche_mezzanine1+Tranche_equity){Tranche_Senior} else{0}}
+Tranche_Loss[1,5]= if (Losses1>Tranche_equity+Tranche_mezzanine1+Tranche_mezzanine2 + Tranche_Senior & Losses1<Tranche_equity+Tranche_mezzanine1+Tranche_mezzanine2+Tranche_Senior+Tranche_Super){(-(Tranche_Senior+Tranche_mezzanine2+Tranche_mezzanine1+Tranche_equity-Losses1))}else{if(Losses1>Tranche_Super+Tranche_Senior+Tranche_mezzanine2+Tranche_mezzanine1+Tranche_equity){Tranche_Super} else{0}}
+Tranche_Loss[1,]
+
+#tranches value year 1
+Tranche_equityY1= max(Tranche_equity-Tranche_Loss[1,1],0)
+Tranche_mezzanine1Y1 = max(Tranche_mezzanine1-Tranche_Loss[1,2],0)
+Tranche_mezzanine2Y1 = max(Tranche_mezzanine2-Tranche_Loss[1,3],0)
+Tranche_SeniorY1 = max(Tranche_Senior-Tranche_Loss[1,4],0)
+Tranche_SuperY1= max(Tranche_Super-Tranche_Loss[1,5],0)
+
+Tranche_value[2,]= c(Tranche_equityY1,Tranche_mezzanine1Y1,Tranche_mezzanine2Y1,Tranche_SeniorY1,Tranche_SuperY1)
+Tranche_value[c(1:2),]
+
+#OC and IC test for year 1
+OC_test[c(1:2),]
+IC_test[c(1:2),]
+
+#tranches loss year 2
+Tranche_Loss[2,1] = if(Tranche_equityY1==0 | Losses2==0){0} else{if(Losses2<=Tranche_equityY1){Losses2} else {if (Losses2>Tranche_equityY1) {(Tranche_equityY1)}else{0}}}
+Tranche_Loss[2,2] = if(Tranche_mezzanine1Y1==0 | Losses2==0){0} else{if (Losses2>Tranche_equityY1 & Losses2<Tranche_equityY1+Tranche_mezzanine1Y1) {-(Tranche_equityY1-Losses2)} else {if( Losses2>Tranche_mezzanine1Y1+Tranche_equityY1){Tranche_mezzanine1Y1}else{0}}}
+Tranche_Loss[2,3] = if(Tranche_mezzanine2Y1==0 | Losses2==0){0}else{if (Losses2>Tranche_equityY1+Tranche_mezzanine1Y1 & Losses1<Tranche_equityY1+Tranche_mezzanine1Y1+Tranche_mezzanine2Y1) {-(Tranche_mezzanine1Y1+Tranche_equityY1-Losses2)} else {if( Losses2>Tranche_mezzanine2Y1+Tranche_mezzanine1Y1+Tranche_equityY1){Tranche_mezzanine2Y1}else{0}}}
+Tranche_Loss[2,4] = if(Tranche_SeniorY1==0 | Losses2==0){0}else{if (Losses2>Tranche_equityY1+Tranche_mezzanine1Y1+Tranche_mezzanine2Y1 & Losses2<Tranche_equityY1+Tranche_mezzanine1Y1+Tranche_mezzanine2Y1+Tranche_SeniorY1) {-(Tranche_mezzanine2Y1+Tranche_mezzanine1Y1+Tranche_equityY1-Losses2)} else {if( Losses2>Tranche_SeniorY1+Tranche_mezzanine2Y1+Tranche_mezzanine1Y1+Tranche_equityY1){Tranche_SeniorY1}else{0}}}
+Tranche_Loss[2,5] = if(Tranche_SuperY1==0 | Losses2==0){0}else{if (Losses2>Tranche_equityY1+Tranche_mezzanine1Y1+Tranche_mezzanine2Y1+Tranche_SeniorY1 & Losses2<Tranche_equityY1+Tranche_mezzanine1Y1+Tranche_mezzanine2Y1+Tranche_SeniorY1+Tranche_SuperY1) {-(Tranche_SeniorY1+Tranche_mezzanine2Y1+Tranche_mezzanine1Y1+Tranche_equityY1-Losses2)} else {if( Losses2>Tranche_SuperY1+Tranche_SeniorY1+Tranche_mezzanine2Y1+Tranche_mezzanine1Y1+Tranche_equityY1){Tranche_SuperY1}else{0}}}
+Tranche_Loss[c(1:2),]
+
+#tranches value year 2
+Tranche_equityY2 = max(Tranche_equityY1-Tranche_Loss[2,1],0)
+Tranche_mezzanine1Y2 = max(Tranche_mezzanine1Y1-Tranche_Loss[2,2],0)
+Tranche_mezzanine2Y2 = max(Tranche_mezzanine2Y1-Tranche_Loss[2,3],0)
+Tranche_SeniorY2 = max(Tranche_SeniorY1-Tranche_Loss[2,4],0)
+Tranche_SuperY2= max(Tranche_SuperY1-Tranche_Loss[2,5],0)
+
+Tranche_value[3,]= c(Tranche_equityY2,Tranche_mezzanine1Y2,Tranche_mezzanine2Y2,Tranche_SeniorY2,Tranche_SuperY2)
+Tranche_value[c(1:3),]
+
+OC_test[c(1:3),]
+IC_test[c(1:3),]
+
+#year 3
+Tranche_Loss[3,1] = if(Tranche_equityY2==0 | Losses3==0){0} else{if(Losses3<=Tranche_equityY2){Losses3} else {if (Losses3>Tranche_equityY2) {(Tranche_equityY2)}else{0}}}
+Tranche_Loss[3,2] = if(Tranche_mezzanine1Y2==0 | Losses3==0){0} else{if (Losses3>Tranche_equityY2 & Losses3<Tranche_equityY2+Tranche_mezzanine1Y2) {-(Tranche_equityY2-Losses3)} else {if( Losses3>Tranche_mezzanine1Y2+Tranche_equityY2){Tranche_mezzanine1Y2}else{0}}}
+Tranche_Loss[3,3] = if(Tranche_mezzanine2Y2==0 | Losses3==0){0}else{if (Losses3>Tranche_equityY2+Tranche_mezzanine1Y2 & Losses3<Tranche_equityY2+Tranche_mezzanine1Y2+Tranche_mezzanine2Y2) {-(Tranche_mezzanine1Y2+Tranche_equityY2-Losses3)} else {if( Losses3>Tranche_mezzanine2Y2+Tranche_mezzanine1Y2+Tranche_equityY2){Tranche_mezzanine2Y2}else{0}}}
+Tranche_Loss[3,4] = if(Tranche_SeniorY2==0 | Losses3==0){0}else{if (Losses3>Tranche_equityY2+Tranche_mezzanine1Y2+Tranche_mezzanine2Y2 & Losses3<Tranche_equityY2+Tranche_mezzanine1Y2+Tranche_mezzanine2Y2+Tranche_SeniorY2) {-(Tranche_mezzanine2Y2+Tranche_mezzanine1Y2+Tranche_equityY2-Losses3)} else {if( Losses3>Tranche_SeniorY2+Tranche_mezzanine2Y2+Tranche_mezzanine1Y2+Tranche_equityY2){Tranche_SeniorY2}else{0}}}
+Tranche_Loss[3,5] = if(Tranche_SuperY2==0 | Losses3==0){0}else{if (Losses3>Tranche_equityY2+Tranche_mezzanine1Y2+Tranche_mezzanine2Y2+Tranche_SeniorY2 & Losses3<Tranche_equityY2+Tranche_mezzanine1Y2+Tranche_mezzanine2Y2+Tranche_SeniorY2+Tranche_SuperY2) {-(Tranche_mezzanine2Y2+Tranche_mezzanine1Y2+Tranche_equityY2+Tranche_SeniorY2-Losses3)} else {if( Losses3>Tranche_SuperY2+Tranche_SeniorY2+Tranche_mezzanine2Y2+Tranche_mezzanine1Y2+Tranche_equityY2){Tranche_SuperY2}else{0}}}
+Tranche_Loss[c(1:3),]
+
+Tranche_equityY3 = max(Tranche_equityY2-Tranche_Loss[3,1],0)
+Tranche_mezzanine1Y3 = max(Tranche_mezzanine1Y2-Tranche_Loss[3,2],0)
+Tranche_mezzanine2Y3 = max(Tranche_mezzanine2Y2-Tranche_Loss[3,3],0)
+Tranche_SeniorY3 = max(Tranche_SeniorY2-Tranche_Loss[3,4],0)
+Tranche_SuperY3= max(Tranche_SuperY2-Tranche_Loss[3,5],0)
+
+Tranche_value[4,]=c(Tranche_equityY3,Tranche_mezzanine1Y3,Tranche_mezzanine2Y3,Tranche_SeniorY3,Tranche_SuperY3)
+Tranche_value[c(1:4),]
+
+OC_test[c(1:4),]
+IC_test[c(1:4),]
+
+
+#we notice an OC test breach, intervention is required
+#we define the value of compliance as the OC test trigger of the senior mezzanine tranche
+notional_year3=Underlying_notional[4,]
+val_compl=notional_year3/1.10
+val_compl
+#we obtain the value of the breach as the difference between the sum of all tranche from the senior mezzanine upwards and the value of compliance
+value_breach=sum(Tranche_value[4,c(3:5)])-val_compl
+value_breach
+
+#We first use the equity interest to cover the losses, then the principal
+intequity_year3=Tranche_equityY3*loans_int
+intequity_year3
+rem_breachY3=value_breach-intequity_year3 
+rem_breachY3   #the equity interest in not enough to cover the breach, so also the principal is used
+
+Tranche_value[4,1]=if(Tranche_equityY3-rem_breachY3 > 0){Tranche_equityY3-rem_breachY3}else{0} #the remaining breach decreases the equity cushion to 0
+Tranche_value[4,1]
+
+#we define the remaining breach, which will be covered by the junior mezzanine tranche interests and principal
+rem2_breachY3=-(Tranche_equityY3-rem_breachY3 )
+rem2_breachY3
+rem3_breachY3=rem2_breachY3-Val_Interests[2,] # junior mezzanine interests are used to cover the remaining loss
+rem3_breachY3
+
+#junior mezzanine interests are not enough, so also the principal is used
+Tranche_value[4,2]=if(Tranche_mezzanine1Y3-rem3_breachY3 > 0){Tranche_mezzanine1Y3-rem3_breachY3}else{print(0)}
+Tranche_value[4,2]
+Tranche_mezzanine1Y3=Tranche_value[4,2]
+Tranche_mezzanine1Y3
+Tranche_equityY3=0 
+
+#the super senior tranche is repaid for the value breach to decrease the numerator and obtain an OC test in compliance
+Tranche_value[4,5]=Tranche_SuperY3=Tranche_SuperY3-value_breach
+Tranche_value[c(1:4),] #new tranche value
+
+Tranche_Loss[3,1]=Tranche_value[3,1]-Tranche_value[4,1]
+Tranche_Loss[3,2]=Tranche_value[3,2]-Tranche_value[4,2]
+Tranche_Loss #total tranche losses
+sum(Tranche_value[4,])
+
+#we define a new OC test with the adjusted values
+OC_test[4,1]=Underlying_notional[4,]/sum(Tranche_value[4,c(2:5)])
+OC_test[4,2]=Underlying_notional[4,]/sum(Tranche_value[4,c(3:5)])
+OC_test[4,3]=Underlying_notional[4,]/sum(Tranche_value[4,c(4:5)])
+OC_test[4,4]=Underlying_notional[4,]/Tranche_value[4,5]
+OC_test[4,c(2:4)]
+
+
+#Year 4
+Losses[4,]
+Tranche_Loss[4,1] = if(Tranche_equityY3==0 | Losses4==0){0} else{if(Losses4<=Tranche_equityY3){Losses4} else {if (Losses4>Tranche_equityY3) {(Tranche_equityY3)}else{0}}}
+Tranche_Loss[4,2] = if(Tranche_mezzanine1Y3==0 | Losses4==0){0} else{if (Losses4>Tranche_equityY3 & Losses4<Tranche_equityY3+Tranche_mezzanine1Y3) {-(Tranche_equityY3-Losses4)} else {if( Losses4>Tranche_mezzanine1Y3+Tranche_equityY3){Tranche_mezzanine1Y3}else{0}}}
+Tranche_Loss[4,3] = if(Tranche_mezzanine2Y3==0 | Losses4==0){0}else{if (Losses4>Tranche_equityY3+Tranche_mezzanine1Y3 & Losses4<Tranche_equityY3+Tranche_mezzanine1Y3+Tranche_mezzanine2Y3) {-(Tranche_mezzanine1Y3+Tranche_equityY3-Losses4)} else {if( Losses4>Tranche_mezzanine2Y3+Tranche_mezzanine1Y3+Tranche_equityY3){Tranche_mezzanine2Y3}else{0}}}
+Tranche_Loss[4,4] = if(Tranche_SeniorY3==0 | Losses4==0){0}else{if (Losses4>Tranche_equityY3+Tranche_mezzanine1Y3+Tranche_mezzanine2Y3 & Losses4<Tranche_equityY3+Tranche_mezzanine1Y3+Tranche_mezzanine2Y3+Tranche_SeniorY3) {-(Tranche_mezzanine2Y3+Tranche_mezzanine1Y3+Tranche_equityY3-Losses4)} else {if( Losses4>Tranche_SeniorY3+Tranche_mezzanine2Y3+Tranche_mezzanine1Y3+Tranche_equityY3){Tranche_SeniorY3}else{0}}}
+Tranche_Loss[4,5] = if(Tranche_SuperY3==0 | Losses4==0){0}else{if (Losses4>Tranche_equityY3+Tranche_mezzanine1Y3+Tranche_mezzanine2Y3+Tranche_SeniorY3 & Losses4<Tranche_equityY3+Tranche_mezzanine1Y3+Tranche_mezzanine2Y3+Tranche_SeniorY3+Tranche_SuperY3) {-(Tranche_mezzanine2Y3+Tranche_mezzanine1Y3+Tranche_equityY3+Tranche_SeniorY3-Losses4)} else {if( Losses4>Tranche_SuperY3+Tranche_SeniorY3+Tranche_mezzanine2Y3+Tranche_mezzanine1Y3+Tranche_equityY3){Tranche_SuperY3}else{0}}}
+Tranche_Loss[c(1:4),]
+
+
+Tranche_equityY4 = max(Tranche_equityY3-Tranche_Loss[4,1],0)
+Tranche_mezzanine1Y4 = max(Tranche_mezzanine1Y3-Tranche_Loss[4,2],0)
+Tranche_mezzanine2Y4 = max(Tranche_mezzanine2Y3-Tranche_Loss[4,3],0)
+Tranche_SeniorY4 = max(Tranche_SeniorY3-Tranche_Loss[4,4],0)
+Tranche_SuperY4= max(Tranche_SuperY3-Tranche_Loss[4,5],0)
+
+Tranche_value[5,]=c(Tranche_equityY4,Tranche_mezzanine1Y4,Tranche_mezzanine2Y4,Tranche_SeniorY4,Tranche_SuperY4)
+Tranche_value[c(1:5),]
+
+
+Underlying_notional
+OC_test[5,1]=Underlying_notional[5,]/sum(Tranche_value[5,c(2:5)])
+OC_test[5,2]=Underlying_notional[5,]/sum(Tranche_value[5,c(3:5)])
+OC_test[5,3]=Underlying_notional[5,]/sum(Tranche_value[5,c(4:5)])
+OC_test[5,4]=Underlying_notional[5,]/Tranche_value[5,5]
+OC_test[5,c(2:4)]
+
+IC_test[c(1:5),]
+
+#the OC test is breached again,we define the value of compliance as the OC test trigger of the junior senior tranche
+notional_year4=Underlying_notional[5,]
+Losses4
+
+OC_test[5,c(2:4)]
+
+val_compl4=notional_year4/1.167
+val_compl4
+value_breach4=sum(Tranche_value[5,c(4:5)])-val_compl4 #we define the amount of the breach
+value_breach4 
+
+
+#Are used the remaining interests of the senior mezzanine tranche to cover the losses
+rem_breachY4=value_breach4-Tranche_value[5,2]*(Risk_free+0.05)
+rem_breachY4  
+rem2_breachY4=rem_breachY4-Tranche_value[5,2]
+rem2_breachY4
+Tranche_value[5,2]=0
+Tranche_mezzanine1Y4=Tranche_value[5,2]
+rem3_breachY4=rem2_breachY4 - Tranche_value[5,3]*(Risk_free+0.03)
+rem3_breachY4  
+
+#the value of the interests is not enough so also the tranche principal is used
+Tranche_value[5,3]=if(Tranche_mezzanine2Y4-rem3_breachY4  > 0){Tranche_mezzanine2Y4-rem3_breachY4 }else{0}
+Tranche_value[5,3]
+
+Tranche_mezzanine2Y4=Tranche_value[5,3]
+Tranche_mezzanine2Y4
+
+#the super senior tranche is decreased since we want to lower the numerator
+Tranche_value[5,5]=Tranche_SuperY4=Tranche_SuperY4-value_breach4 
+Tranche_value[c(1:5),]
+sum(Tranche_value[5,])
+Tranche_Loss[4,3]=Tranche_value[4,3]-Tranche_value[5,3]
+Tranche_Loss[4,3]
+
+#new OC test
+OC_test[5,1]=Underlying_notional[5,]/sum(Tranche_value[5,c(2:5)])
+OC_test[5,2]=Underlying_notional[5,]/sum(Tranche_value[5,c(3:5)])
+OC_test[5,3]=Underlying_notional[5,]/sum(Tranche_value[5,c(4:5)])
+OC_test[5,4]=Underlying_notional[5,]/Tranche_value[5,5]
+OC_test[5,c(3:4)]
+
+
+#year 5
+Tranche_Loss[5,1] = if(Tranche_equityY4==0 | Losses5==0){0} else{if(Losses5<=Tranche_equityY4){Losses5} else {if (Losses5>Tranche_equityY4) {(Tranche_equityY4)}else{0}}}
+Tranche_Loss[5,2] = if(Tranche_mezzanine1Y4==0 | Losses5==0){0} else{if (Losses5>Tranche_equityY4 & Losses5<Tranche_equityY4+Tranche_mezzanine1Y4) {-(Tranche_equityY4-Losses5)} else {if( Losses5>Tranche_mezzanine1Y4+Tranche_equityY4){Tranche_mezzanine1Y4}else{0}}}
+Tranche_Loss[5,3] = if(Tranche_mezzanine2Y4==0 | Losses5==0){0}else{if (Losses5>Tranche_equityY4+Tranche_mezzanine1Y4 & Losses5<Tranche_equityY4+Tranche_mezzanine1Y4+Tranche_mezzanine2Y4) {-(Tranche_mezzanine1Y4+Tranche_equityY4-Losses5)} else {if( Losses5>Tranche_mezzanine2Y4+Tranche_mezzanine1Y4+Tranche_equityY4){Tranche_mezzanine2Y4}else{0}}}
+Tranche_Loss[5,4] = if(Tranche_SeniorY4==0 | Losses5==0){0}else{if (Losses5>Tranche_equityY4+Tranche_mezzanine1Y4+Tranche_mezzanine2Y4 & Losses5<Tranche_equityY4+Tranche_mezzanine1Y4+Tranche_mezzanine2Y4+Tranche_SeniorY4) {-(Tranche_mezzanine2Y4+Tranche_mezzanine1Y4+Tranche_equityY4-Losses5)} else {if( Losses5>Tranche_SeniorY4+Tranche_mezzanine2Y4+Tranche_mezzanine1Y4+Tranche_equityY4){Tranche_SeniorY4}else{0}}}
+Tranche_Loss[5,5] = if(Tranche_SuperY4==0 | Losses5==0){0}else{if (Losses5>Tranche_equityY4+Tranche_mezzanine1Y4+Tranche_mezzanine2Y4+Tranche_SeniorY4 & Losses5<Tranche_equityY4+Tranche_mezzanine1Y4+Tranche_mezzanine2Y4+Tranche_SeniorY4+Tranche_SuperY4) {-(Tranche_mezzanine2Y4+Tranche_mezzanine1Y4+Tranche_equityY4+Tranche_SeniorY4-Losses5)} else {if( Losses5>Tranche_SuperY4+Tranche_SeniorY4+Tranche_mezzanine2Y4+Tranche_mezzanine1Y4+Tranche_equityY4){Tranche_SuperY4}else{0}}}
+Tranche_Loss
+
+
+Tranche_equityY5 = max(Tranche_equityY4-Tranche_Loss[5,1],0)
+Tranche_mezzanine1Y5 = max(Tranche_mezzanine1Y4-Tranche_Loss[5,2],0)
+Tranche_mezzanine2Y5 = max(Tranche_mezzanine2Y4-Tranche_Loss[5,3],0)
+Tranche_SeniorY5 = max(Tranche_SeniorY4-Tranche_Loss[5,4],0)
+Tranche_SuperY5= max(Tranche_SuperY4-Tranche_Loss[5,5],0)
+
+Tranche_value[6,]=c(Tranche_equityY5,Tranche_mezzanine1Y5,Tranche_mezzanine2Y5,Tranche_SeniorY5,Tranche_SuperY5)
+
+Tranche_value
+
+OC_test[6,1]=Underlying_notional[6,]/sum(Tranche_value[6,c(2:5)])
+OC_test[6,2]=Underlying_notional[6,]/sum(Tranche_value[6,c(3:5)])
+OC_test[6,3]=Underlying_notional[6,]/sum(Tranche_value[6,c(4:5)])
+OC_test[6,4]=Underlying_notional[6,]/Tranche_value[6,5]
+OC_test[6,c(3:4)]
+
+
+Underlying_notional
+OC_test[6,1]=Underlying_notional[6,]/sum(Tranche_value[6,c(2:5)])
+OC_test[6,2]=Underlying_notional[6,]/sum(Tranche_value[6,c(3:5)])
+OC_test[6,3]=Underlying_notional[6,]/sum(Tranche_value[6,c(4:5)])
+OC_test[6,4]=Underlying_notional[6,]/Tranche_value[6,5]
+OC_test[6,4]
+OCtest <- ts(OC_test[,4], start=0, end=5, frequency=1)
+ts.plot(OCtest, xlim=c(0,5), ylim=c(0.9,1.65), main = "O/C Test")
+abline(h=1.28,col="red", lwd=1, lty=2)
+
+text(1.5, 1.2, labels ="Super Senior trigger")
+
+
+#we define with Tranche_END the ending value of tranches for each year
+Tranche_END=matrix(0,5,5)
+colnames(Tranche_END)=c("Equity", "Mezzanine1", "Mezzanine2", "Junior Senior","Super Senior" )
+rownames(Tranche_END)=c("Year 1", "Year 2", "Year 3", "Year 4", "Year 5")
+Tranche_END[1,]=Tranche_value[2,]
+Tranche_END[2,]=Tranche_value[3,]
+Tranche_END[3,]=Tranche_value[4,]
+Tranche_END[4,]=Tranche_value[5,]
+Tranche_END[5,]=Tranche_value[6,]
+Tranche_END
+
+#we set as NA the values of the OC test for the defaulted tranches
+OC_test[c(4:6),1]=NA
+OC_test[c(5:6),2]=NA
+OC_test
+
+OCtest <- ts(OC_test, start=0, end=5, frequency=1)
+ts.plot(OCtest, xlim=c(0,5), ylim=c(0.9,1.5), main = "O/C Test")
+abline(h=1.053,col="red", lwd=1, lty=2)
+abline(h=1.10,col="red", lwd=1, lty=2)
+abline(h=1.167,col="red", lwd=1, lty=2)
+abline(h=1.28,col="red", lwd=1, lty=2)
+text(0.5, 1.07, labels ="Junior mezzanine ", cex= 0.7)
+text(1, 1.113, labels ="Senior mezzanine ",cex= 0.7)
+text(1.2, 1.176, labels ="Junior Senior ",cex= 0.7)
+text(1.2, 1.29, labels ="Super Senior",cex= 0.7)
+
+#we set as NA the values of the IC test for the defaulted tranches
+IC_test[c(4:6),1]=NA
+IC_test[c(5:6),2]=NA
+IC_test
+ICtest <- ts(IC_test, start=0, end=5, frequency=1)
+ts.plot(ICtest, xlim=c(0,5), ylim=c(0.9,2.65), main= "I/C Test")
+abline(h=1.15, col="red", lwd=1, lty=2)
+abline(h=1.2, col="red", lwd=1, lty=2)
+text(1.2, 1.17, labels ="Junior Senior ",cex= 0.7)
+text(1.2, 1.23, labels ="Super Senior",cex= 0.7)
+
+#we define the final value for the CLO
+Final_Notional=Underlying_notional[6,]
+Final_cushion=0
+CLO_tranche_end=Tranche_value[6,]
+CLO_tranche_end
+
+#we define the decrease in interest and the equity interest paid during the years
+Int_decrease=Interest_Underlying-Int_under
+Interests_equity=Val_Interests[1,]-Int_decrease
+Interests_equity[c(4:6),]=0
+Interests_equity[c(2:6),]
+Val_Interests
+
+#we calculate the toatal interests paid per tranche
+Total_interest_paid=matrix(0,5,1)
+Total_interest_paid[1,]=sum(Interests_equity[c(2:6),])
+Total_interest_paid[2,]=Val_Interests[2,]*2
+Total_interest_paid[3,]=Val_Interests[3,]*3
+Total_interest_paid[4,]=Val_Interests[4,]*4
+Total_interest_paid[5,]=Val_Interests[5,]*5
+rownames(Total_interest_paid)=c("Equity","Junior Mezzanine", "Senior Mezzanine", "Junior Senior","Super Senior" )
+colnames(Total_interest_paid)="Total Interests"
+Total_interest_paid
+
+
+Final_CLO=cbind(CLO_tranche_end,Total_interest_paid)  
+rownames(Final_CLO)=c("Equity","Junior Mezzanine", "Senior Mezzanine", "Junior Senior","Super Senior" )
+colnames(Final_CLO)=c("Final Tranche Value", "Total Interests")
+
+#we pot the results
+CLO_start_end=cbind(Initial_tranches,CLO_tranche_end)
+colnames(CLO_start_end)=c("Year 0", "Year 5")
+barplot(CLO_start_end, main = "CLO structure")
+barplot(Total_interest_paid[,1], main ="Total interests paid")
+barplot(Interests_equity[c(2:6),1], main = "Equity interests per year")
+barplot(Final_CLO[,1], main = "Final CLO tranches value")
+
+#we calculate the spread for each tranche
+Expected_Loss_equity=sum(Tranche_Loss[,1])
+PV_Expected_Loss_equity=((Tranche_Loss[1,1]*exp(-Risk_free*1))+(Tranche_Loss[2,1]*exp(-Risk_free*2))+(Tranche_Loss[3,1]*exp(-Risk_free*3))+(Tranche_Loss[4,1]*exp(-Risk_free*4))+(Tranche_Loss[5,1]*exp(-Risk_free*5)))
+
+Expected_Loss_mezz1=sum(Tranche_Loss[,2])
+PV_Expected_Loss_mezz1=((Tranche_Loss[1,2]*exp(-Risk_free*1))+(Tranche_Loss[2,2]*exp(-Risk_free*2))+(Tranche_Loss[3,2]*exp(-Risk_free*3))+(Tranche_Loss[4,2]*exp(-Risk_free*4))+(Tranche_Loss[5,2]*exp(-Risk_free*5)))
+
+Expected_Loss_mezz2=sum(Tranche_Loss[,3])
+PV_Expected_Loss_mezz2=((Tranche_Loss[1,3]*exp(-Risk_free*1))+(Tranche_Loss[2,3]*exp(-Risk_free*2))+(Tranche_Loss[3,3]*exp(-Risk_free*3))+(Tranche_Loss[4,3]*exp(-Risk_free*4))+(Tranche_Loss[5,3]*exp(-Risk_free*5)))
+
+Expected_Loss_senior=sum(Tranche_Loss[,4])
+PV_Expected_Loss_senior=((Tranche_Loss[1,4]*exp(-Risk_free*1))+(Tranche_Loss[2,4]*exp(-Risk_free*2))+(Tranche_Loss[3,4]*exp(-Risk_free*3))+(Tranche_Loss[4,4]*exp(-Risk_free*4))+(Tranche_Loss[5,4]*exp(-Risk_free*5)))
+
+Expected_Loss_super=sum(Tranche_Loss[,5])
+PV_Expected_Loss_super=((Tranche_Loss[1,5]*exp(-Risk_free*1))+(Tranche_Loss[2,5]*exp(-Risk_free*2))+(Tranche_Loss[3,5]*exp(-Risk_free*3))+(Tranche_Loss[4,5]*exp(-Risk_free*4))+(Tranche_Loss[5,5]*exp(-Risk_free*5)))
+
+Expected_Loss=matrix(0,1,5)
+Expected_Loss[,1]=Expected_Loss_equity
+Expected_Loss[,2]=Expected_Loss_mezz1
+Expected_Loss[,3]=Expected_Loss_mezz2
+Expected_Loss[,4]=Expected_Loss_senior
+Expected_Loss[,5]=Expected_Loss_super
+
+PV_Expected_Loss=matrix(0,1,5)
+PV_Expected_Loss[,1]=PV_Expected_Loss_equity
+PV_Expected_Loss[,2]=PV_Expected_Loss_mezz1
+PV_Expected_Loss[,3]=PV_Expected_Loss_mezz2
+PV_Expected_Loss[,4]=PV_Expected_Loss_senior
+PV_Expected_Loss[,5]=PV_Expected_Loss_super
+
+Loss_EXPandPV=matrix(0,2,5)
+colnames(Loss_EXPandPV)=c("Equity", "Mezzanine1", "Mezzanine2", "Junior Senior","Super Senior" )
+rownames(Loss_EXPandPV)=c("Sum of Expected Loss", "PV Sum of Expected Loss")
+Loss_EXPandPV[1,]=Expected_Loss
+Loss_EXPandPV[2,]=PV_Expected_Loss
+Loss_EXPandPV
+
+Expected_notional_equity=sum(Tranche_END[,1])
+Expected_notional_mezz1=sum(Tranche_END[,2])
+Expected_notional_mezz2=sum(Tranche_END[,3])
+Expected_notional_senior=sum(Tranche_END[,4])
+Expected_notional_super=sum(Tranche_END[,5])
+
+PV_Expected_notional_equity=((Tranche_END[1,1]*exp(-Risk_free*1))+(Tranche_END[2,1]*exp(-Risk_free*2))+(Tranche_END[3,1]*exp(-Risk_free*3))+(Tranche_END[4,1]*exp(-Risk_free*4))+(Tranche_END[5,1]*exp(-Risk_free*5)))
+PV_Expected_notional_mezz1=((Tranche_END[1,2]*exp(-Risk_free*1))+(Tranche_END[2,2]*exp(-Risk_free*2))+(Tranche_END[3,2]*exp(-Risk_free*3))+(Tranche_END[4,2]*exp(-Risk_free*4))+(Tranche_END[5,2]*exp(-Risk_free*5)))
+PV_Expected_notional_mezz2=((Tranche_END[1,3]*exp(-Risk_free*1))+(Tranche_END[2,3]*exp(-Risk_free*2))+(Tranche_END[3,3]*exp(-Risk_free*3))+(Tranche_END[4,3]*exp(-Risk_free*4))+(Tranche_END[5,3]*exp(-Risk_free*5)))
+PV_Expected_notional_senior=((Tranche_END[1,4]*exp(-Risk_free*1))+(Tranche_END[2,4]*exp(-Risk_free*2))+(Tranche_END[3,4]*exp(-Risk_free*3))+(Tranche_END[4,4]*exp(-Risk_free*4))+(Tranche_END[5,4]*exp(-Risk_free*5)))
+PV_Expected_notional_super=((Tranche_END[1,5]*exp(-Risk_free*1))+(Tranche_END[2,5]*exp(-Risk_free*2))+(Tranche_END[3,5]*exp(-Risk_free*3))+(Tranche_END[4,5]*exp(-Risk_free*4))+(Tranche_END[5,5]*exp(-Risk_free*5)))
+
+
+Expected_notional=matrix(0,1,5)
+Expected_notional[,1]=Expected_notional_equity
+Expected_notional[,2]=Expected_notional_mezz1
+Expected_notional[,3]=Expected_notional_mezz2
+Expected_notional[,4]=Expected_notional_senior
+Expected_notional[,5]=Expected_notional_super
+
+PV_Expected_notional=matrix(0,1,5)
+PV_Expected_notional[,1]=PV_Expected_notional_equity
+PV_Expected_notional[,2]=PV_Expected_notional_mezz1
+PV_Expected_notional[,3]=PV_Expected_notional_mezz2
+PV_Expected_notional[,4]=PV_Expected_notional_senior
+PV_Expected_notional[,5]=PV_Expected_notional_super
+
+Notional_EXPandPV=matrix(0,2,5)
+colnames(Notional_EXPandPV)=c("Equity", "Mezzanine1", "Mezzanine2", "Junior Senior","Super Senior" )
+rownames(Notional_EXPandPV)=c("Sum of Expected Notional", "PV Sum of Expected Notional")
+Notional_EXPandPV[1,]=Expected_notional
+Notional_EXPandPV[2,]=PV_Expected_notional
+Notional_EXPandPV
+
+Spread_equity=PV_Expected_Loss_equity/PV_Expected_notional_equity
+Spread_mezz1=PV_Expected_Loss_mezz1/PV_Expected_notional_mezz1
+Spread_mezz2=PV_Expected_Loss_mezz2/PV_Expected_notional_mezz2
+Spread_senior=PV_Expected_Loss_senior/PV_Expected_notional_senior
+Spread_super=PV_Expected_Loss_super/PV_Expected_notional_super
+
+Spread=matrix(0,1,5)
+Spread[,1]=Spread_equity
+Spread[,2]=Spread_mezz1
+Spread[,3]=Spread_mezz2
+Spread[,4]=Spread_senior
+Spread[,5]=Spread_super
+
+colnames(Spread)=c("Equity", "Mezzanine1", "Mezzanine2", "Junior Senior","Super Senior" )
+rownames(Spread)="Spread"
+Spread
+
+Final_CLO[,1]=round(Final_CLO[,1],1)
+#plot of final tranche values
+ggplot_tranches<- data.frame(
+  Tranche=c("1Equity","2Junior Mezzanine", "3Senior Mezzanine", "4Junior Senior","5Super Senior" ),
+  Value=Final_CLO[,1])
+ggplot(ggplot_tranches, aes(x=Tranche, y=Value)) + 
+  geom_bar(stat = "identity",fill= c("red3","blue3", "green3","orange3", "gold1")) +
+  geom_text(aes(label=Value), vjust=-0.3, size=4.3) +
+  theme_minimal()
+
+#plot of equity interests
+Total_interest_paid[4,1]=189
+Total_interest_paid[5,1]=1691
+#plot of total interests per tranche
+Total_interest_paid[,1]= round(Total_interest_paid[,1],1)
+ggplot_interests<- data.frame(
+  Tranche=c("1Equity","2Junior Mezzanine", "3Senior Mezzanine", "4Junior Senior","5Super Senior" ),
+  Interests=Total_interest_paid[,1])
+ggplot(ggplot_interests, aes(x=Tranche, y=Interests)) + 
+  geom_bar(stat = "identity",fill= c("red3","blue3", "green3","orange3", "gold1")) +
+  geom_text(aes(label=Interests), vjust=-0.3, size=4.3) +
+  theme_minimal()
+
+
+
+ggplot_Losses<- data.frame(
+  Year=c("Year 1", "Year 2", "Year 3", "Year 4", "Year 5"),
+  Default=Default_year)
+ggplot(ggplot_Losses, aes(x=Year, y=Default)) + 
+  geom_bar(stat = "identity",fill= c("brown")) +
+  geom_text(aes(label=Default_year), vjust=-0.3, size=4.3) +
+  theme_minimal()
